@@ -1,13 +1,12 @@
 import re
 import os
 from typing import Dict, Any, Tuple
-try:
-    from openai import OpenAI  # v1.0+
-    OPENAI_V1 = True
-except ImportError:
-    import openai  # v0.x
-    OPENAI_V1 = False
+from dotenv import load_dotenv
+import anthropic
 from .config import get_model_for_task, estimate_cost
+
+# Load environment variables
+load_dotenv()
 
 
 def calculate_response_likelihood(pitch: str, journalist_data: Dict[str, Any]) -> float:
@@ -136,7 +135,7 @@ def _apply_keyword_boost(pitch: str, likelihood: float, keyword_triggers: list) 
 
 def evaluate_pitch_with_ai(pitch: str, journalist_data: Dict[str, Any]) -> Tuple[str, float]:
     """
-    Evaluate a pitch using AI and return detailed feedback with cost tracking.
+    Evaluate a pitch using Claude and return detailed feedback with cost tracking.
     
     Returns:
         Tuple of (feedback_text, estimated_cost)
@@ -165,38 +164,24 @@ Please provide a detailed evaluation covering:
 Provide specific, actionable feedback that helps improve the pitch. Be direct but constructive."""
 
     try:
-        if OPENAI_V1:
-            # OpenAI v1.0+ API
-            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": "You are an expert PR consultant with deep knowledge of journalism and media relations."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=1000,
-                temperature=0.7
-            )
-            feedback = response.choices[0].message.content
-            output_tokens = response.usage.completion_tokens if response.usage else len(feedback.split()) * 1.3
-        else:
-            # OpenAI v0.x API
-            openai.api_key = os.getenv("OPENAI_API_KEY")
-            response = openai.ChatCompletion.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": "You are an expert PR consultant with deep knowledge of journalism and media relations."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=1000,
-                temperature=0.7
-            )
-            feedback = response.choices[0].message.content
-            output_tokens = response.usage.completion_tokens if hasattr(response, 'usage') else len(feedback.split()) * 1.3
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         
-        # Estimate cost
-        input_tokens = len(prompt.split()) * 1.3  # Rough estimate
-        cost = estimate_cost(model, int(input_tokens), int(output_tokens))
+        response = client.messages.create(
+            model=model,
+            max_tokens=1000,
+            temperature=0.7,
+            system="You are an expert PR consultant with deep knowledge of journalism and media relations.",
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        
+        feedback = response.content[0].text
+        
+        # Estimate cost using token usage
+        input_tokens = response.usage.input_tokens
+        output_tokens = response.usage.output_tokens
+        cost = estimate_cost(model, input_tokens, output_tokens)
         
         return feedback, cost
         

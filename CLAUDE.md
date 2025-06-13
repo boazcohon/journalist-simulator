@@ -66,9 +66,9 @@ git push -u origin feature/feature-name
 
 **Creating New Personas**:
 ```python
-# Use o3 for initial generation (quality matters)
-# Then switch to o3-mini for interactions (cost-effective)
-model = "o3-2025-04-16" if creating else "o3-mini-2025-01-31"
+# Use Claude 3.5 Sonnet for initial generation (quality matters)
+# Then switch to Claude 3 Haiku for interactions (cost-effective)
+model = "claude-3-5-sonnet-20241022" if creating else "claude-3-haiku-20240307"
 ```
 
 **JSON Structure**:
@@ -108,11 +108,11 @@ def calculate_response_likelihood(pitch, journalist_data):
 # Decision tree for model selection
 def choose_model(task):
     if task == "generate_new_persona":
-        return "o3-2025-04-16"  # Quality matters
+        return "claude-3-5-sonnet-20241022"  # Quality matters
     elif task == "evaluate_pitch":
-        return "o3-mini-2025-01-31"  # 85% quality, 15% cost
+        return "claude-3-haiku-20240307"  # Fast and cost-effective
     else:
-        return "o3-mini-2025-01-31"  # Default to mini
+        return "claude-3-haiku-20240307"  # Default to Haiku
 ```
 
 ## 🏗️ Building Features
@@ -202,8 +202,8 @@ Before committing:
 # 1. Copy the example file
 cp .env.example .env
 
-# 2. Edit .env with your actual key
-OPENAI_API_KEY=sk-proj-your-actual-key-here
+# 2. Edit .env with your actual Anthropic API key
+ANTHROPIC_API_KEY=sk-ant-your-actual-key-here
 
 # 3. NEVER commit .env to git (it's in .gitignore)
 git status  # Should NOT show .env as a change
@@ -218,7 +218,7 @@ git status  # Should NOT show .env as a change
 
 **If you accidentally commit a key:**
 ```bash
-# 1. IMMEDIATELY revoke the key at platform.openai.com
+# 1. IMMEDIATELY revoke the key at console.anthropic.com
 # 2. Generate a new key
 # 3. Contact support to purge git history if needed
 ```

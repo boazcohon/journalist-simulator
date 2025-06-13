@@ -42,9 +42,9 @@ def main():
             st.warning("No journalists found. Please create one first.")
             st.session_state.selected_journalist = None
     
-    # Check for OpenAI API key
-    if not os.getenv("OPENAI_API_KEY"):
-        st.error("⚠️ OpenAI API key not found. Please set OPENAI_API_KEY in your .env file.")
+    # Check for Anthropic API key
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        st.error("⚠️ Anthropic API key not found. Please set ANTHROPIC_API_KEY in your .env file.")
         st.stop()
     
     # Main content based on selected mode
@@ -203,7 +203,7 @@ def show_pitch_evaluator():
                                 with st.sidebar:
                                     st.metric("Session Cost", f"${st.session_state.total_cost:.4f}")
                     else:
-                        st.error("OpenAI API key required for AI evaluation. Please set OPENAI_API_KEY in your .env file.")
+                        st.error("Anthropic API key required for AI evaluation. Please set ANTHROPIC_API_KEY in your .env file.")
         
         else:
             st.error("Please enter a pitch to evaluate.")

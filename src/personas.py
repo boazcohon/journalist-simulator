@@ -2,13 +2,12 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
-try:
-    from openai import OpenAI  # v1.0+
-    OPENAI_V1 = True
-except ImportError:
-    import openai  # v0.x
-    OPENAI_V1 = False
+from dotenv import load_dotenv
+import anthropic
 from .config import get_model_for_task, estimate_cost
+
+# Load environment variables
+load_dotenv()
 
 
 # Journalist type templates for generation
@@ -186,37 +185,25 @@ IMPORTANT:
 """
 
     try:
-        if OPENAI_V1:
-            # OpenAI v1.0+ API
-            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": "You are an expert in journalism and media relations. Generate realistic, professional journalist personas."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=1500,
-                temperature=0.8
-            )
-            content = response.choices[0].message.content
-            output_tokens = response.usage.completion_tokens if response.usage else len(content.split()) * 1.3
-        else:
-            # OpenAI v0.x API
-            openai.api_key = os.getenv("OPENAI_API_KEY")
-            response = openai.ChatCompletion.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": "You are an expert in journalism and media relations. Generate realistic, professional journalist personas."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=1500,
-                temperature=0.8
-            )
-            content = response.choices[0].message.content
-            output_tokens = response.usage.completion_tokens if hasattr(response, 'usage') else len(content.split()) * 1.3
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         
-        # Parse JSON response
-        journalist_data = json.loads(content.strip())
+        response = client.messages.create(
+            model=model,
+            max_tokens=1500,
+            temperature=0.8,
+            system="You are an expert in journalism and media relations. Generate realistic, professional journalist personas.",
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        
+        content = response.content[0].text
+        
+        # Clean content and parse JSON response
+        # Remove any potential control characters that might cause parsing issues
+        import re
+        cleaned_content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content.strip())
+        journalist_data = json.loads(cleaned_content)
         
         # Validate required fields
         required_fields = ["name", "publication", "beat", "base_response_rate", "response_factors", "keyword_triggers", "system_prompt"]
@@ -224,9 +211,10 @@ IMPORTANT:
             if field not in journalist_data:
                 raise ValueError(f"Generated journalist missing required field: {field}")
         
-        # Calculate cost
-        input_tokens = len(prompt.split()) * 1.3
-        cost = estimate_cost(model, int(input_tokens), int(output_tokens))
+        # Calculate cost using actual token usage
+        input_tokens = response.usage.input_tokens
+        output_tokens = response.usage.output_tokens
+        cost = estimate_cost(model, input_tokens, output_tokens)
         
         if return_cost:
             return journalist_data, cost
