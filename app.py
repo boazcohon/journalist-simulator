@@ -142,12 +142,16 @@ def main():
                                     st.session_state.total_cost = 0
                                 st.session_state.total_cost += cost
                                 
-                                # Show a preview
-                                with st.expander("👀 Preview Generated Journalist"):
+                                # Show a preview in a container instead of expander (can't nest expanders)
+                                st.divider()
+                                st.write("**👀 Preview Generated Journalist:**")
+                                col1, col2 = st.columns(2)
+                                with col1:
                                     st.write(f"**Name:** {journalist['name']}")
                                     st.write(f"**Beat:** {journalist['beat']}")
+                                with col2:
                                     st.write(f"**Response Rate:** {journalist['base_response_rate']:.1%}")
-                                    st.write(f"**Keywords:** {', '.join(journalist['keyword_triggers'][:5])}")
+                                    st.write(f"**Keywords:** {len(journalist['keyword_triggers'])} triggers")
                                 
                                 st.rerun()  # Refresh to show new journalist in selector
                                 
