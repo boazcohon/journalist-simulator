@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 from src.personas import list_journalists, load_journalist, generate_journalist_persona, save_journalist, JOURNALIST_TEMPLATES
 from src.evaluation import calculate_response_likelihood, evaluate_pitch_with_ai
+from src.conversation import ConversationManager
 
 # Load environment variables
 load_dotenv()
@@ -411,14 +412,155 @@ def get_improvement_suggestions(pitch, journalist, likelihood):
     return suggestions
 
 def show_conversation_mode():
-    st.header("Conversation with Journalist")
+    st.header("💬 Conversation with Journalist")
     
-    # Placeholder for conversation mode
-    st.info("🚧 Conversation mode coming soon!")
-    st.write("This section will allow you to:")
-    st.write("- Chat in real-time with AI journalists")
-    st.write("- Practice follow-up questions")
-    st.write("- Build rapport and refine your approach")
+    if not hasattr(st.session_state, 'selected_journalist') or st.session_state.selected_journalist is None:
+        st.warning("Please select a journalist from the sidebar first.")
+        return
+    
+    journalist = load_journalist(st.session_state.selected_journalist)
+    
+    # Initialize conversation manager in session state
+    conversation_key = f"conversation_{st.session_state.selected_journalist}"
+    if conversation_key not in st.session_state:
+        st.session_state[conversation_key] = ConversationManager(journalist)
+    
+    conversation = st.session_state[conversation_key]
+    
+    # Show journalist info
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        st.info(f"💼 **{journalist['name']}** at **{journalist['publication']}** ({journalist['beat']})")
+    with col2:
+        engagement = conversation.assess_engagement_level()
+        st.metric("Engagement", engagement)
+    with col3:
+        st.metric("Messages", len(conversation.messages))
+    
+    # Chat interface
+    chat_container = st.container()
+    
+    # Display conversation history
+    if conversation.messages:
+        with chat_container:
+            for message in conversation.messages:
+                if message["role"] == "user":
+                    # User message (right aligned)
+                    st.markdown(f"""
+                    <div style="text-align: right; margin: 10px 0;">
+                        <div style="background-color: #0084ff; color: white; padding: 10px 15px; 
+                                    border-radius: 20px; display: inline-block; max-width: 70%;">
+                            {message['content']}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    # Journalist response (left aligned)
+                    st.markdown(f"""
+                    <div style="text-align: left; margin: 10px 0;">
+                        <strong>{journalist['name']}:</strong><br>
+                        <div style="background-color: #f1f1f1; color: black; padding: 10px 15px; 
+                                    border-radius: 20px; display: inline-block; max-width: 70%;">
+                            {message['content']}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+    else:
+        with chat_container:
+            st.markdown(f"""
+            <div style="text-align: center; color: #666; margin: 40px 0;">
+                👋 Start a conversation with <strong>{journalist['name']}</strong><br>
+                <small>They specialize in {journalist['beat']} and respond to relevant, well-crafted pitches</small>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # Message input
+    with st.form("message_form", clear_on_submit=True):
+        col1, col2 = st.columns([4, 1])
+        
+        with col1:
+            user_message = st.text_area(
+                "Your message:",
+                placeholder=f"Hi {journalist['name']}, I wanted to reach out about...",
+                height=100,
+                label_visibility="collapsed"
+            )
+        
+        with col2:
+            st.write("")  # Spacing
+            send_button = st.form_submit_button("Send 📤", type="primary", use_container_width=True)
+            
+            # Quick message suggestions
+            if st.form_submit_button("💡 Suggest pitch"):
+                if journalist['beat'].lower() == 'technology':
+                    suggested_pitch = f"Hi {journalist['name']}, I have an exclusive story about a major tech company's AI breakthrough that could impact the entire industry. Are you interested in learning more?"
+                else:
+                    suggested_pitch = f"Hi {journalist['name']}, I have an exclusive story that fits perfectly with your {journalist['beat']} coverage. Would you like to hear more details?"
+                user_message = suggested_pitch
+    
+    # Process message
+    if send_button and user_message.strip():
+        with st.spinner(f"{journalist['name']} is typing..."):
+            response, cost = conversation.generate_response(user_message.strip())
+            
+            # Update cost tracking
+            if 'total_cost' not in st.session_state:
+                st.session_state.total_cost = 0
+            st.session_state.total_cost += cost
+            
+        # Rerun to show new messages
+        st.rerun()
+    
+    # Conversation controls
+    st.divider()
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if st.button("🔄 New Conversation"):
+            # Reset conversation
+            del st.session_state[conversation_key]
+            st.rerun()
+    
+    with col2:
+        if st.button("📊 Summary") and conversation.messages:
+            summary = conversation.get_conversation_summary()
+            st.json({
+                "duration_minutes": round(summary["duration"], 1),
+                "total_messages": summary["message_count"],
+                "cost": f"${summary['total_cost']:.4f}",
+                "engagement": conversation.assess_engagement_level()
+            })
+    
+    with col3:
+        if st.button("💾 Export") and conversation.messages:
+            summary = conversation.get_conversation_summary()
+            st.download_button(
+                label="Download Chat",
+                data=str(summary),
+                file_name=f"conversation_{journalist['name'].replace(' ', '_')}.txt",
+                mime="text/plain"
+            )
+    
+    with col4:
+        if conversation.messages:
+            st.caption(f"💰 Session: ${conversation.total_cost:.4f}")
+    
+    # Tips sidebar
+    with st.sidebar:
+        if st.session_state.get(conversation_key):
+            st.header("💡 Conversation Tips")
+            with st.expander("Best Practices"):
+                st.write("**For higher engagement:**")
+                st.write("• Use journalist's name")
+                st.write("• Reference their recent work")
+                st.write("• Offer exclusive information")
+                st.write("• Be concise and specific")
+                st.write("• Include data or evidence")
+                
+                st.write("**Keywords that work:**")
+                keywords = journalist.get('keyword_triggers', [])[:5]
+                for keyword in keywords:
+                    st.code(keyword)
 
 if __name__ == "__main__":
     main()
