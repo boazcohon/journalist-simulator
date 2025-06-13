@@ -42,6 +42,17 @@ black .
 
 # Type checking
 mypy src/
+
+# Git workflow - ALWAYS push after commits
+git add .
+git commit -m "feat: description of changes"
+git push origin main
+
+# For new features, use feature branches
+git checkout -b feature/feature-name
+# ... make changes and commits ...
+git push -u origin feature/feature-name
+# Create PR via GitHub UI or: gh pr create
 ```
 
 ## 💡 Key Development Patterns
@@ -216,3 +227,14 @@ Phase 3 (Advanced):
 - Response patterns > fictional backstories
 - Let users build profiles through actual use
 - The goal is education, not deception
+- **ALWAYS push commits to GitHub immediately after making them**
+
+## 🔄 Git Workflow Requirements
+
+**CRITICAL**: After every `git commit`, immediately run `git push origin main` to sync with GitHub. This ensures:
+- Code is backed up and accessible
+- Team members can see progress
+- No work is lost
+- Continuous integration stays updated
+
+**Exception**: Only skip pushing if working on sensitive/incomplete features that need feature branch isolation.
