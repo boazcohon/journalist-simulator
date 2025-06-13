@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 from dotenv import load_dotenv
-from src.personas import list_journalists, load_journalist
+from src.personas import list_journalists, load_journalist, generate_journalist_persona, save_journalist, JOURNALIST_TEMPLATES
 from src.evaluation import calculate_response_likelihood, evaluate_pitch_with_ai
 
 # Load environment variables
@@ -41,6 +41,140 @@ def main():
         else:
             st.warning("No journalists found. Please create one first.")
             st.session_state.selected_journalist = None
+        
+        # Add journalist creation section
+        st.header("Create New Journalist")
+        
+        with st.expander("➕ Generate New Journalist"):
+            # Creation method selection
+            creation_method = st.radio(
+                "Creation Method:",
+                ["Type-based", "Named Journalist"],
+                help="Type-based uses templates, Named creates specific real journalists"
+            )
+            
+            if creation_method == "Type-based":
+                # Template-based generation
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    journalist_type = st.selectbox(
+                        "Journalist Type:",
+                        list(JOURNALIST_TEMPLATES.keys()),
+                        help="Choose the type of journalist to generate"
+                    )
+                
+                with col2:
+                    publication = st.text_input(
+                        "Publication:",
+                        placeholder="e.g., TechCrunch, WSJ, Reuters",
+                        help="The publication they work for"
+                    )
+                
+                # Show template info
+                if journalist_type:
+                    template = JOURNALIST_TEMPLATES[journalist_type]
+                    st.info(f"**{journalist_type.title()} Template**: {template['personality_traits']}")
+            
+            else:
+                # Named journalist generation
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    named_journalist = st.text_input(
+                        "Journalist Name:",
+                        placeholder="e.g., Kara Swisher, Walter Isaacson",
+                        help="Real journalist name (will research their style)"
+                    )
+                
+                with col2:
+                    publication = st.text_input(
+                        "Publication:",
+                        placeholder="e.g., Recode, The Atlantic",
+                        help="Their current or known publication"
+                    )
+                
+                journalist_type = None  # Not used for named journalists
+            
+            # Generation controls
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("🎯 Generate Journalist", type="primary"):
+                    if (creation_method == "Type-based" and journalist_type and publication) or \
+                       (creation_method == "Named Journalist" and named_journalist and publication):
+                        
+                        with st.spinner("Generating journalist persona..."):
+                            try:
+                                # Generate the journalist
+                                if creation_method == "Type-based":
+                                    journalist, cost = generate_journalist_persona(
+                                        journalist_type=journalist_type,
+                                        publication=publication,
+                                        return_cost=True
+                                    )
+                                    generated_name = journalist['name']
+                                else:
+                                    journalist, cost = generate_journalist_persona(
+                                        named_journalist=named_journalist,
+                                        publication=publication,
+                                        return_cost=True
+                                    )
+                                    generated_name = named_journalist
+                                
+                                # Create a safe filename
+                                import re
+                                safe_name = re.sub(r'[^a-zA-Z0-9_]', '_', generated_name.lower().replace(' ', '_'))
+                                journalist_id = f"{safe_name}_{publication.lower().replace(' ', '_')}"
+                                
+                                # Save the journalist
+                                save_journalist(journalist_id, journalist)
+                                
+                                # Update session state
+                                st.session_state.selected_journalist = journalist_id
+                                
+                                # Show success
+                                st.success(f"✅ Generated **{generated_name}** at **{publication}**!")
+                                st.info(f"💰 Generation cost: ${cost:.4f}")
+                                
+                                # Update cost tracking
+                                if 'total_cost' not in st.session_state:
+                                    st.session_state.total_cost = 0
+                                st.session_state.total_cost += cost
+                                
+                                # Show a preview
+                                with st.expander("👀 Preview Generated Journalist"):
+                                    st.write(f"**Name:** {journalist['name']}")
+                                    st.write(f"**Beat:** {journalist['beat']}")
+                                    st.write(f"**Response Rate:** {journalist['base_response_rate']:.1%}")
+                                    st.write(f"**Keywords:** {', '.join(journalist['keyword_triggers'][:5])}")
+                                
+                                st.rerun()  # Refresh to show new journalist in selector
+                                
+                            except Exception as e:
+                                st.error(f"❌ Generation failed: {str(e)}")
+                                st.write("Please check your API key and try again.")
+                    
+                    else:
+                        st.error("Please fill in all required fields.")
+            
+            with col2:
+                if st.button("📋 Preview Template"):
+                    if creation_method == "Type-based" and journalist_type:
+                        template = JOURNALIST_TEMPLATES[journalist_type]
+                        st.json({
+                            "type": journalist_type,
+                            "base_response_rate": template['base_response_rate'],
+                            "response_factors": template['response_factors'],
+                            "common_keywords": template['common_keywords'],
+                            "personality": template['personality_traits']
+                        })
+                    else:
+                        st.info("Select a journalist type to preview template.")
+        
+        # Show cost tracking in sidebar
+        if 'total_cost' in st.session_state and st.session_state.total_cost > 0:
+            st.metric("💰 Session Cost", f"${st.session_state.total_cost:.4f}")
     
     # Check for Anthropic API key
     if not os.getenv("ANTHROPIC_API_KEY"):
@@ -184,7 +318,7 @@ def show_pitch_evaluator():
             # AI evaluation (if requested)
             if ai_eval:
                 with st.expander("🤖 AI Expert Analysis", expanded=True):
-                    if os.getenv("OPENAI_API_KEY"):
+                    if os.getenv("ANTHROPIC_API_KEY"):
                         with st.spinner("Getting AI feedback..."):
                             ai_feedback, cost = evaluate_pitch_with_ai(pitch, journalist)
                             
@@ -198,10 +332,6 @@ def show_pitch_evaluator():
                                 if 'total_cost' not in st.session_state:
                                     st.session_state.total_cost = 0
                                 st.session_state.total_cost += cost
-                                
-                                # Show running total in sidebar
-                                with st.sidebar:
-                                    st.metric("Session Cost", f"${st.session_state.total_cost:.4f}")
                     else:
                         st.error("Anthropic API key required for AI evaluation. Please set ANTHROPIC_API_KEY in your .env file.")
         

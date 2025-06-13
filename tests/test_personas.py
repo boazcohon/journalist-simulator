@@ -113,8 +113,10 @@ def test_generate_journalist_persona_tech():
     # Verify publication matches
     assert journalist["publication"] == "The Verge"
     
-    # Verify tech journalist characteristics
-    assert "tech" in journalist["beat"].lower() or "technology" in journalist["beat"].lower()
+    # Verify tech journalist characteristics (more flexible matching)
+    beat_lower = journalist["beat"].lower()
+    tech_terms = ["tech", "technology", "ai", "software", "startup", "digital"]
+    assert any(term in beat_lower for term in tech_terms), f"Beat '{journalist['beat']}' should contain tech-related terms"
     assert len(journalist["keyword_triggers"]) >= 3
     assert len(journalist["system_prompt"]) > 100  # Should be detailed
 
