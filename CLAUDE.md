@@ -43,7 +43,12 @@ black .
 # Type checking
 mypy src/
 
+# Security check - verify .env is protected
+git check-ignore .env  # Should return: .env
+
 # Git workflow - ALWAYS push after commits
+# SECURITY CHECK: Ensure .env is not staged!
+git status | grep -v ".env"  # Should not show .env file
 git add .
 git commit -m "feat: description of changes"
 git push origin main
@@ -190,9 +195,39 @@ Before committing:
 
 ## 🔒 Security & Privacy
 
+### API Key Security - CRITICAL ⚠️
+
+**Setting up your API key:**
+```bash
+# 1. Copy the example file
+cp .env.example .env
+
+# 2. Edit .env with your actual key
+OPENAI_API_KEY=sk-proj-your-actual-key-here
+
+# 3. NEVER commit .env to git (it's in .gitignore)
+git status  # Should NOT show .env as a change
+```
+
+**Security checklist:**
+- ✅ `.env` is in `.gitignore` (already configured)
+- ✅ Only commit `.env.example` with placeholder values
+- ✅ Never log or print API keys in code
+- ✅ Use environment variables, never hardcode keys
+- ❌ NEVER run `git add .env` or commit actual keys
+
+**If you accidentally commit a key:**
+```bash
+# 1. IMMEDIATELY revoke the key at platform.openai.com
+# 2. Generate a new key
+# 3. Contact support to purge git history if needed
+```
+
+### Journalist Data Privacy
+
 1. **Never include**:
    - Real journalist personal details
-   - Private contact information
+   - Private contact information  
    - Unverified claims about real people
 
 2. **Always include**:
