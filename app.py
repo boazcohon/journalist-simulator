@@ -1,9 +1,11 @@
 import streamlit as st
 import os
+import asyncio
 from dotenv import load_dotenv
 from src.personas import list_journalists, load_journalist, generate_journalist_persona, save_journalist, JOURNALIST_TEMPLATES
 from src.evaluation import calculate_response_likelihood, evaluate_pitch_with_ai
 from src.conversation import ConversationManager
+from src.research import JournalistResearcher, ResearchProgress
 
 # Load environment variables
 load_dotenv()
@@ -50,11 +52,146 @@ def main():
             # Creation method selection
             creation_method = st.radio(
                 "Creation Method:",
-                ["Type-based", "Named Journalist"],
-                help="Type-based uses templates, Named creates specific real journalists"
+                ["Research-based", "Type-based", "Named Journalist"],
+                help="Research-based uses web search for real data, Type-based uses templates"
             )
             
-            if creation_method == "Type-based":
+            if creation_method == "Research-based":
+                # Research-based generation using web search
+                st.info("🔍 **Research-based profiles** use web search to gather verified information about real journalists")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    journalist_name = st.text_input(
+                        "Journalist Name:",
+                        placeholder="e.g., Kara Swisher, Walter Isaacson",
+                        help="Full name of the journalist to research"
+                    )
+                
+                with col2:
+                    publication = st.text_input(
+                        "Publication (optional):",
+                        placeholder="e.g., The New York Times, TechCrunch",
+                        help="Known publication - helps verify identity"
+                    )
+                
+                # Research depth selection
+                research_depth = st.radio(
+                    "Research Depth:",
+                    ["Quick Search (3-5 searches)", "Standard (10-15 searches)", "Comprehensive (20+ searches)"],
+                    help="More searches = better data quality but higher cost"
+                )
+                depth_map = {
+                    "Quick Search (3-5 searches)": "quick",
+                    "Standard (10-15 searches)": "standard", 
+                    "Comprehensive (20+ searches)": "comprehensive"
+                }
+                
+                # Research controls
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if st.button("🔍 Research Journalist", type="primary"):
+                        if journalist_name.strip():
+                            # Initialize research
+                            researcher = JournalistResearcher()
+                            depth = depth_map[research_depth]
+                            
+                            # Progress tracking containers
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            step_details = st.empty()
+                            
+                            def progress_callback(progress: ResearchProgress):
+                                progress_bar.progress(progress.step_number / progress.total_steps)
+                                status_text.text(f"Step {progress.step_number}/{progress.total_steps}: {progress.current_step}")
+                                if progress.details:
+                                    step_details.text(progress.details)
+                            
+                            try:
+                                # Run research
+                                with st.spinner("Starting research..."):
+                                    # Note: We'll use sync for now, async would require more complex setup
+                                    research_results = asyncio.run(researcher.research_journalist(
+                                        name=journalist_name,
+                                        publication=publication or None,
+                                        depth=depth,
+                                        progress_callback=progress_callback
+                                    ))
+                                
+                                # Create safe filename
+                                import re
+                                safe_name = re.sub(r'[^a-zA-Z0-9_]', '_', journalist_name.lower().replace(' ', '_'))
+                                pub_safe = re.sub(r'[^a-zA-Z0-9_]', '_', publication.lower().replace(' ', '_')) if publication else "unknown"
+                                journalist_id = f"research_{safe_name}_{pub_safe}"
+                                
+                                # Save the researched journalist
+                                save_journalist(journalist_id, research_results)
+                                
+                                # Update session state
+                                st.session_state.selected_journalist = journalist_id
+                                
+                                # Show success with quality score
+                                quality_score = research_results['metadata']['data_quality_score']
+                                st.success(f"✅ Research complete for **{journalist_name}**!")
+                                st.info(f"📊 Data quality score: {quality_score:.1%}")
+                                
+                                # Show research summary
+                                st.divider()
+                                st.write("**🔍 Research Summary:**")
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    st.write(f"**Name:** {research_results['name']}")
+                                    st.write(f"**Publication:** {research_results['verified_info']['current_position']['publication']}")
+                                    st.write(f"**Beat:** {research_results['analyzed_data']['primary_beat']}")
+                                
+                                with col2:
+                                    st.write(f"**Articles Found:** {len(research_results['verified_info']['recent_articles'])}")
+                                    st.write(f"**Topics:** {', '.join(research_results['analyzed_data']['common_topics'][:3])}")
+                                    st.write(f"**Confidence:** {research_results['analyzed_data']['confidence']:.1%}")
+                                
+                                # Show verification badges
+                                verified_sources = len(research_results['verified_info']['verification_sources'])
+                                if verified_sources > 0:
+                                    st.success(f"✅ {verified_sources} verification sources found")
+                                else:
+                                    st.warning("⚠️ Limited verification sources - data may be incomplete")
+                                
+                                progress_bar.empty()
+                                status_text.empty()
+                                step_details.empty()
+                                
+                                st.rerun()  # Refresh to show new journalist
+                                
+                            except Exception as e:
+                                st.error(f"❌ Research failed: {str(e)}")
+                                progress_bar.empty()
+                                status_text.empty()
+                                step_details.empty()
+                        
+                        else:
+                            st.error("Please enter a journalist name.")
+                
+                with col2:
+                    if st.button("ℹ️ Research Info"):
+                        st.info("""
+                        **Research Process:**
+                        1. ✅ Verify journalist identity & employment
+                        2. 📰 Find recent articles (last 90 days)
+                        3. 📊 Analyze coverage patterns & topics
+                        4. 🔗 Find social media profiles (comprehensive only)
+                        5. 🎯 Infer communication preferences
+                        6. 📋 Generate verified profile with sources
+                        
+                        **Data Quality:**
+                        - ✅ Verified: From official sources
+                        - ⚠️ Inferred: AI analysis of patterns
+                        - ❌ Unknown: Insufficient data
+                        """)
+            
+            elif creation_method == "Type-based":
                 # Template-based generation
                 col1, col2 = st.columns(2)
                 
