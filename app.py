@@ -2,7 +2,7 @@ import streamlit as st
 import os
 from dotenv import load_dotenv
 from src.personas import list_journalists, load_journalist
-from src.evaluation import calculate_response_likelihood
+from src.evaluation import calculate_response_likelihood, evaluate_pitch_with_ai
 
 # Load environment variables
 load_dotenv()
@@ -115,7 +115,14 @@ def show_pitch_evaluator():
         height=200
     )
     
-    if st.button("Evaluate Pitch", type="primary"):
+    # Evaluation options
+    col1, col2 = st.columns(2)
+    with col1:
+        basic_eval = st.button("Quick Evaluation (Free)", type="secondary")
+    with col2:
+        ai_eval = st.button("AI Evaluation (Premium)", type="primary")
+    
+    if basic_eval or ai_eval:
         if pitch.strip():
             # Calculate response likelihood
             likelihood = calculate_response_likelihood(pitch, journalist)
@@ -168,11 +175,35 @@ def show_pitch_evaluator():
                     for keyword in matched_keywords:
                         st.code(keyword)
             
-            # Improvement suggestions
-            with st.expander("🚀 Improvement Suggestions"):
+            # Basic improvement suggestions
+            with st.expander("🚀 Basic Improvement Suggestions"):
                 suggestions = get_improvement_suggestions(pitch, journalist, likelihood)
                 for suggestion in suggestions:
                     st.write(f"• {suggestion}")
+            
+            # AI evaluation (if requested)
+            if ai_eval:
+                with st.expander("🤖 AI Expert Analysis", expanded=True):
+                    if os.getenv("OPENAI_API_KEY"):
+                        with st.spinner("Getting AI feedback..."):
+                            ai_feedback, cost = evaluate_pitch_with_ai(pitch, journalist)
+                            
+                            st.markdown(ai_feedback)
+                            
+                            # Cost tracking
+                            if cost > 0:
+                                st.caption(f"💰 Estimated cost: ${cost:.4f}")
+                                
+                                # Update session state cost tracking
+                                if 'total_cost' not in st.session_state:
+                                    st.session_state.total_cost = 0
+                                st.session_state.total_cost += cost
+                                
+                                # Show running total in sidebar
+                                with st.sidebar:
+                                    st.metric("Session Cost", f"${st.session_state.total_cost:.4f}")
+                    else:
+                        st.error("OpenAI API key required for AI evaluation. Please set OPENAI_API_KEY in your .env file.")
         
         else:
             st.error("Please enter a pitch to evaluate.")

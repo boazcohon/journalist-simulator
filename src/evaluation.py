@@ -1,5 +1,13 @@
 import re
-from typing import Dict, Any
+import os
+from typing import Dict, Any, Tuple
+try:
+    from openai import OpenAI  # v1.0+
+    OPENAI_V1 = True
+except ImportError:
+    import openai  # v0.x
+    OPENAI_V1 = False
+from .config import get_model_for_task, estimate_cost
 
 
 def calculate_response_likelihood(pitch: str, journalist_data: Dict[str, Any]) -> float:
@@ -124,3 +132,74 @@ def _apply_keyword_boost(pitch: str, likelihood: float, keyword_triggers: list) 
         likelihood *= keyword_multiplier
     
     return likelihood
+
+
+def evaluate_pitch_with_ai(pitch: str, journalist_data: Dict[str, Any]) -> Tuple[str, float]:
+    """
+    Evaluate a pitch using AI and return detailed feedback with cost tracking.
+    
+    Returns:
+        Tuple of (feedback_text, estimated_cost)
+    """
+    model = get_model_for_task("evaluation")
+    
+    # Build evaluation prompt
+    prompt = f"""You are an expert PR consultant evaluating a pitch to {journalist_data['name']} at {journalist_data['publication']}.
+
+JOURNALIST PROFILE:
+- Beat: {journalist_data['beat']}
+- Base response rate: {journalist_data['base_response_rate']:.1%}
+- Keywords: {', '.join(journalist_data.get('keyword_triggers', []))}
+- Personality: {journalist_data.get('system_prompt', 'Professional journalist')}
+
+PITCH TO EVALUATE:
+{pitch}
+
+Please provide a detailed evaluation covering:
+1. **Relevance** - How well does this match the journalist's beat and interests?
+2. **News Value** - What makes this newsworthy? Is there a compelling angle?
+3. **Timing** - Are there any timing considerations (exclusivity, breaking news, etc.)?
+4. **Presentation** - How is the pitch structured and written?
+5. **Likelihood Assessment** - Based on this journalist's profile, how likely are they to respond?
+
+Provide specific, actionable feedback that helps improve the pitch. Be direct but constructive."""
+
+    try:
+        if OPENAI_V1:
+            # OpenAI v1.0+ API
+            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "You are an expert PR consultant with deep knowledge of journalism and media relations."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=1000,
+                temperature=0.7
+            )
+            feedback = response.choices[0].message.content
+            output_tokens = response.usage.completion_tokens if response.usage else len(feedback.split()) * 1.3
+        else:
+            # OpenAI v0.x API
+            openai.api_key = os.getenv("OPENAI_API_KEY")
+            response = openai.ChatCompletion.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "You are an expert PR consultant with deep knowledge of journalism and media relations."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=1000,
+                temperature=0.7
+            )
+            feedback = response.choices[0].message.content
+            output_tokens = response.usage.completion_tokens if hasattr(response, 'usage') else len(feedback.split()) * 1.3
+        
+        # Estimate cost
+        input_tokens = len(prompt.split()) * 1.3  # Rough estimate
+        cost = estimate_cost(model, int(input_tokens), int(output_tokens))
+        
+        return feedback, cost
+        
+    except Exception as e:
+        error_msg = f"Error generating AI feedback: {str(e)}"
+        return error_msg, 0.0
